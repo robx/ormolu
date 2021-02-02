@@ -12,6 +12,7 @@ module Ormolu.Printer.Meat.Declaration
 where
 
 import Data.List (sort)
+import Data.Maybe (maybeToList)
 import Data.List.NonEmpty (NonEmpty (..), (<|))
 import qualified Data.List.NonEmpty as NE
 import GHC hiding (InlinePragma)
@@ -185,6 +186,8 @@ groupedDecls (L l_x x') (L l_y y') =
     (x, TypeSignature ns) | Just ns' <- isPragma x -> ns `intersects` ns'
     (TypeSignature ns, x) | Just ns' <- isPragma x -> ns `intersects` ns'
     (PatternSignature ns, Pattern n) -> n `elem` ns
+    (PatternSignature ns, x) | Just ns' <- isPragma x -> ns `intersects` ns'
+    (Pattern n, x) | Just ns <- isPragma x -> n `elem` ns
     (KindSignature n, DataDeclaration n') -> n == n'
     (KindSignature n, ClassDeclaration n') -> n == n'
     (KindSignature n, FamilyDeclaration n') -> n == n'
@@ -229,6 +232,7 @@ isPragma = \case
   AnnTypePragma n -> Just [n]
   AnnValuePragma n -> Just [n]
   WarningPragma n -> Just n
+  CompletePragma n -> Just n
   _ -> Nothing
 
 -- Declarations that do not refer to names
@@ -270,13 +274,15 @@ pattern
   DefaultSignature,
   FunctionBody,
   PatternSignature,
-  WarningPragma ::
+  WarningPragma,
+  CompletePragma ::
     [RdrName] -> HsDecl GhcPs
 pattern TypeSignature n <- (sigRdrNames -> Just n)
 pattern DefaultSignature n <- (defSigRdrNames -> Just n)
 pattern FunctionBody n <- (funRdrNames -> Just n)
 pattern PatternSignature n <- (patSigRdrNames -> Just n)
 pattern WarningPragma n <- (warnSigRdrNames -> Just n)
+pattern CompletePragma n <- (completeSigRdrNames -> Just n)
 
 pattern DocNext, DocPrev :: HsDecl GhcPs
 pattern DocNext <- (DocD NoExtField (DocCommentNext _))
@@ -307,6 +313,11 @@ warnSigRdrNames (WarningD NoExtField (Warnings NoExtField _ ws)) = Just $
     L _ (Warning NoExtField ns _) -> map unLoc ns
     L _ (XWarnDecl x) -> noExtCon x
 warnSigRdrNames _ = Nothing
+
+completeSigRdrNames :: HsDecl GhcPs -> Maybe [RdrName]
+completeSigRdrNames (SigD NoExtField (CompleteMatchSig NoExtField _ (L _ xs) ys)) = Just $
+  map unLoc (maybeToList ys ++ xs)
+completeSigRdrNames _ = Nothing
 
 patBindNames :: Pat GhcPs -> [RdrName]
 patBindNames (TuplePat NoExtField ps _) = concatMap (patBindNames . unLoc) ps
